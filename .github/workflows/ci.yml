@@ -1,0 +1,55 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  gcc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=MinSizeRel
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+      - run: ./build/nanotts --sample-rate 24000 --text "안녕하세요. 한국어 음성 합성기입니다." -o korean.wav
+      - run: python3 tools/check_corpus.py ./build/nanotts tests/data/ko_smoke.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: korean-wav
+          path: korean.wav
+
+  compact-no-libm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=MinSizeRel
+          -DNANOTTS_USE_LIBM=OFF
+          -DNANOTTS_BUILD_PCM=OFF
+          -DNANOTTS_MAX_EVENTS=256
+          -DNANOTTS_MAX_SYLLABLES=96
+          -DNANOTTS_CONTEXT_BYTES=3072
+          -DNANOTTS_AUDIO_BLOCK=64
+          -DNANOTTS_CONTROL_MS=2
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+      - run: ./build/nanotts --text "문이 열렸습니다." --format pwm --pwm-top 1023 -o speech.pwm16le
+
+  clang-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          CC=clang cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DNANOTTS_BUILD_EXAMPLES=OFF
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -O1"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - run: cmake --build build --parallel
+      - run: ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 ctest --test-dir build --output-on-failure
+
+  makefile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./setup.sh --jobs 2
+      - run: ./build-make-ko-all/nanotts --text "국민, 신라, 학교, 꽃이." -o rules.wav

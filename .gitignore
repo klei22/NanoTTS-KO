@@ -1,0 +1,29 @@
+# Build trees and generated binaries
+build/
+build-*/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Generated audio / raw MCU streams
+*.wav
+*.pcm
+*.pcm16le
+*.pwm
+*.pwm16le
+
+# Coverage, sanitizers, editor and OS noise
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+.cache/
+.vscode/
+.idea/
+.DS_Store
+*~
