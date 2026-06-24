@@ -1,6 +1,8 @@
 # Click-free synthesis and MCU playback
 
-NanoTTS-KO 1.2 smooths transitions inside the renderer, but an MCU audio path
+> NanoTTS-KO 2.0 retains this 1.3 renderer behavior beneath the new linguistic frontend.
+
+NanoTTS-KO 1.3 smooths both silence edges and connected-phone joins inside the renderer, but an MCU audio path
 can reintroduce clicks after the PCM callback. Use the following checks to
 separate the two cases.
 
@@ -70,3 +72,8 @@ to clock loss.
 
 These changes target discontinuities without applying a blanket low-pass filter
 to the final speech signal.
+
+
+## Connected-phone joins
+
+For the shared acoustic midpoint, pair-specific overlap windows, nasal-cluster timing, and residual boundary bridge used in 1.3, see [`TRANSITIONS.md`](TRANSITIONS.md).

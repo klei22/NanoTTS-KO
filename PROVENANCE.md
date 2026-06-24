@@ -5,49 +5,46 @@ NanoTTS-KO is an original MIT-licensed implementation.
 ## Excluded material
 
 The repository does not contain or link to eSpeak/eSpeak NG code, language
-rules, dictionaries, voices, SAM code, or another TTS implementation. No GPL
-source or voice data is embedded in the runtime.
+rules, dictionaries, voices, SAM code, g2pK code, or another TTS implementation.
+No GPL source, sampled voice, or third-party pronunciation table is embedded in
+the runtime.
 
 ## Linguistic implementation
 
-Hangul decomposition follows the arithmetic organization standardized by
-Unicode. Korean pronunciation behavior was implemented from published
-linguistic descriptions and public Korean standard-pronunciation rules, then
-expressed as new bounded C logic. Built-in pronunciation spellings were written
-specifically for this project and are covered by the repository's MIT license.
+Hangul decomposition follows Unicode's published arithmetic organization.
+Korean pronunciation behavior was independently implemented from public
+standard-pronunciation descriptions and published linguistic research, then
+expressed as new bounded C logic and independently authored tests.
 
-The 1.1 regression data records pronunciation pairs, not copied program tables
-or sampled voice material. Application users may remove the built-in lexicon at
-compile time.
+Version 2's token, morphology, normalization, variant, phonology, and prosody
+modules are original project code. The built-in exception spellings were
+written specifically for this project. They are removable at compile time.
+
+Public examples from standard pronunciation rules are used as behavioral
+regression cases. The repository does not copy another program's rule engine,
+source layout, generated dictionary, or acoustic data.
 
 ## Acoustic implementation
 
 The renderer is a new compact source/filter synthesizer based on general
 published speech-production and formant-synthesis principles. Filter code,
-source model, acoustic tables, timing envelopes, source-quality cues, and
-prosody code were authored for NanoTTS-KO.
+source model, acoustic tables, timing envelopes, source-quality cues, smoothing,
+and prosody code were authored for NanoTTS-KO.
 
-Korean vowel targets were selected from published Seoul Korean formant
-measurements, rounded into a coherent synthetic male voice, and further tuned
-using generated-waveform diagnostics. The Korean three-way obstruent model uses
-published qualitative and quantitative relationships among release timing,
-aspiration, following-vowel F0, and phonation. These are independently authored
-numeric parameters, not copied software tables.
+Korean vowel targets were rounded into one coherent synthetic voice and tuned
+using generated-waveform diagnostics. Obstruent distinctions use independently
+authored relationships among release timing, aspiration, following-vowel F0,
+and source quality rather than copied software tables.
 
 ## Voice and recordings
 
 No recorded speaker data is shipped. Generated examples are output of this MIT
-runtime. Any future sampled, residual, LPC, or unit-selection voice must include
-an explicit recording and derivative-data license before distribution.
+runtime. Any future sampled, residual, LPC, unit-selection, or learned voice
+must include explicit rights for the recordings, annotations, model training,
+and redistribution before it is packaged.
 
-## Reference trail
+## External comparison tools
 
-Primary design references include:
-
-- The Unicode Standard's Hangul syllable decomposition algorithm.
-- National Institute of Korean Language, Standard Pronunciation rules.
-- Published Seoul Korean accentual-phrase research.
-- Published Korean three-way stop timing, F0, and voice-quality studies.
-- Published modern Seoul Korean vowel-formant measurements.
-
-Repository code and tables remain independently authored under MIT.
+Third-party Korean G2P or TTS tools may be used process-separately as behavioral
+or listening references during development. Their source and data are not
+incorporated into this MIT runtime.

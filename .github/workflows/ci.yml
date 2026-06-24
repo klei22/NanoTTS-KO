@@ -9,7 +9,7 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=MinSizeRel
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
-      - run: ./build/nanotts --sample-rate 24000 --text "안녕하세요. 한국어 음성 합성기입니다." -o korean.wav
+      - run: ./build/nanotts --sample-rate 24000 --style modern --text "안녕하세요. 한국어 음성 합성기입니다." -o korean.wav
       - run: python3 tools/check_corpus.py ./build/nanotts tests/data/ko_smoke.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -25,14 +25,41 @@ jobs:
           -DCMAKE_BUILD_TYPE=MinSizeRel
           -DNANOTTS_USE_LIBM=OFF
           -DNANOTTS_BUILD_PCM=OFF
-          -DNANOTTS_MAX_EVENTS=256
-          -DNANOTTS_MAX_SYLLABLES=96
-          -DNANOTTS_CONTEXT_BYTES=3072
+          -DNANOTTS_MAX_EVENTS=320
+          -DNANOTTS_MAX_SYLLABLES=128
+          -DNANOTTS_MAX_TOKENS=64
+          -DNANOTTS_MAX_MORPHEMES=128
+          -DNANOTTS_CONTEXT_BYTES=8192
           -DNANOTTS_AUDIO_BLOCK=64
           -DNANOTTS_CONTROL_MS=2
+          -DNANOTTS_COEFF_STRIDE=4
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
       - run: ./build/nanotts --text "문이 열렸습니다." --format pwm --pwm-top 1023 -o speech.pwm16le
+
+  spelling-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=MinSizeRel
+          -DNANOTTS_ENABLE_BUILTIN_LEXICON=OFF
+          -DNANOTTS_ENABLE_MORPHOLOGY=OFF
+          -DNANOTTS_ENABLE_NORMALIZATION=OFF
+          -DNANOTTS_USE_LIBM=OFF
+          -DNANOTTS_BUILD_PCM=OFF
+          -DNANOTTS_BUILD_PWM=OFF
+          -DNANOTTS_MAX_EVENTS=320
+          -DNANOTTS_MAX_SYLLABLES=128
+          -DNANOTTS_MAX_TOKENS=64
+          -DNANOTTS_MAX_MORPHEMES=64
+          -DNANOTTS_CONTEXT_BYTES=8192
+          -DNANOTTS_AUDIO_BLOCK=64
+          -DNANOTTS_CONTROL_MS=2
+          -DNANOTTS_COEFF_STRIDE=4
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
 
   clang-sanitizers:
     runs-on: ubuntu-latest
@@ -52,4 +79,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./setup.sh --jobs 2
-      - run: ./build-make-ko-all/nanotts --text "국민, 신라, 학교, 꽃이." -o rules.wav
+      - run: ./build-make-ko2-all/nanotts --text "국민, 신라, 학교, 꽃이." -o rules.wav

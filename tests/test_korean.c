@@ -26,21 +26,23 @@ static void check_case(nanotts_t *t,const case_t *c)
 }
 static const nanotts_phone_t p0[]={NANOTTS_PH_H,NANOTTS_PH_A,NANOTTS_PH_N,NANOTTS_PH_K_LAX,NANOTTS_PH_U,NANOTTS_PH_K_LAX,NANOTTS_PH_EO};
 static const nanotts_phone_t p1[]={NANOTTS_PH_K_LAX,NANOTTS_PH_U,NANOTTS_PH_NG,NANOTTS_PH_M,NANOTTS_PH_I,NANOTTS_PH_N};
-static const nanotts_phone_t p2[]={NANOTTS_PH_S_LAX,NANOTTS_PH_I,NANOTTS_PH_L,NANOTTS_PH_L,NANOTTS_PH_A};
+static const nanotts_phone_t p2[]={NANOTTS_PH_S_LAX_PAL,NANOTTS_PH_I,NANOTTS_PH_L,NANOTTS_PH_L,NANOTTS_PH_A};
 static const nanotts_phone_t p3[]={NANOTTS_PH_M,NANOTTS_PH_EO,NANOTTS_PH_K_CODA,NANOTTS_PH_T_TENSE,NANOTTS_PH_A};
 static const nanotts_phone_t p4[]={NANOTTS_PH_H,NANOTTS_PH_A,NANOTTS_PH_K_CODA,NANOTTS_PH_K_TENSE,NANOTTS_PH_Y,NANOTTS_PH_O};
 static const nanotts_phone_t p5[]={NANOTTS_PH_M,NANOTTS_PH_A,NANOTTS_PH_N,NANOTTS_PH_A};
-static const nanotts_phone_t p6[]={NANOTTS_PH_S_LAX,NANOTTS_PH_I,NANOTTS_PH_R,NANOTTS_PH_EO};
+static const nanotts_phone_t p6[]={NANOTTS_PH_S_LAX_PAL,NANOTTS_PH_I,NANOTTS_PH_R,NANOTTS_PH_EO};
 static const nanotts_phone_t p7[]={NANOTTS_PH_K_TENSE,NANOTTS_PH_O,NANOTTS_PH_C_ASP,NANOTTS_PH_I};
-static const nanotts_phone_t p8[]={NANOTTS_PH_K_LAX,NANOTTS_PH_A,NANOTTS_PH_P_CODA,NANOTTS_PH_S_TENSE,NANOTTS_PH_I};
+static const nanotts_phone_t p8[]={NANOTTS_PH_K_LAX,NANOTTS_PH_A,NANOTTS_PH_P_CODA,NANOTTS_PH_S_TENSE_PAL,NANOTTS_PH_I};
 static const nanotts_phone_t p9[]={NANOTTS_PH_M,NANOTTS_PH_A,NANOTTS_PH_N,NANOTTS_PH_T_ASP,NANOTTS_PH_A};
 static const nanotts_phone_t p10[]={NANOTTS_PH_M,NANOTTS_PH_A,NANOTTS_PH_C_ASP,NANOTTS_PH_I,NANOTTS_PH_T_LAX,NANOTTS_PH_A};
 static const nanotts_phone_t p11[]={NANOTTS_PH_K_LAX,NANOTTS_PH_U,NANOTTS_PH_NG,NANOTTS_PH_N,NANOTTS_PH_I,NANOTTS_PH_P_CODA};
 static const nanotts_phone_t p12[]={NANOTTS_PH_S_LAX,NANOTTS_PH_EO,NANOTTS_PH_L,NANOTTS_PH_L,NANOTTS_PH_A,NANOTTS_PH_L};
 static const nanotts_phone_t p13[]={NANOTTS_PH_I,NANOTTS_PH_L,NANOTTS_PH_K_LAX,NANOTTS_PH_EO};
+#if NANOTTS_ENABLE_MORPHOLOGY
 static const nanotts_phone_t p14[]={NANOTTS_PH_A,NANOTTS_PH_N,NANOTTS_PH_T_TENSE,NANOTTS_PH_A};
 static const nanotts_phone_t p15[]={NANOTTS_PH_C_LAX,NANOTTS_PH_EO,NANOTTS_PH_M,NANOTTS_PH_T_TENSE,NANOTTS_PH_A};
-static const nanotts_phone_t p16[]={NANOTTS_PH_UI,NANOTTS_PH_S_LAX,NANOTTS_PH_A};
+#endif
+static const nanotts_phone_t p16[]={NANOTTS_PH_I,NANOTTS_PH_S_LAX,NANOTTS_PH_A};
 static const nanotts_phone_t p17[]={NANOTTS_PH_H,NANOTTS_PH_A,NANOTTS_PH_N,NANOTTS_PH_N,NANOTTS_PH_I,NANOTTS_PH_L};
 static const case_t cases[]={
  {"한국어",p0,sizeof(p0)/sizeof(p0[0])},{"국민",p1,sizeof(p1)/sizeof(p1[0])},
@@ -50,7 +52,9 @@ static const case_t cases[]={
  {"값이",p8,sizeof(p8)/sizeof(p8[0])},{"많다",p9,sizeof(p9)/sizeof(p9[0])},
  {"맞히다",p10,sizeof(p10)/sizeof(p10[0])},{"국립",p11,sizeof(p11)/sizeof(p11[0])},
  {"설날",p12,sizeof(p12)/sizeof(p12[0])},{"읽어",p13,sizeof(p13)/sizeof(p13[0])},
+#if NANOTTS_ENABLE_MORPHOLOGY
  {"앉다",p14,sizeof(p14)/sizeof(p14[0])},{"젊다",p15,sizeof(p15)/sizeof(p15[0])},
+#endif
  {"의사",p16,sizeof(p16)/sizeof(p16[0])},{"한 일",p17,sizeof(p17)/sizeof(p17[0])}
 };
 int main(void)

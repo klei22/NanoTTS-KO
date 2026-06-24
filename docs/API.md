@@ -1,4 +1,4 @@
-# API
+# Public API
 
 Include:
 
@@ -12,20 +12,22 @@ Include:
 nanotts_t tts;
 nanotts_options_t options;
 
-nanotts_result_t r = nanotts_init(&tts, 16000);
+nanotts_result_t r = nanotts_init(&tts, 16000u);
 nanotts_default_options(&options);
 ```
 
-`nanotts_t` is opaque caller-owned storage. Do not copy it while rendering.
-`nanotts_reset()` clears queued events and DSP state while preserving the sample
-rate and lexicon callback.
+`nanotts_t` is opaque caller-owned storage. Do not copy or modify it while
+rendering. `nanotts_reset()` clears analysis, events, and DSP state while
+preserving the sample rate and both application lexicon callbacks.
 
-Supported sample rates are 8000 through 24000 Hz. The library produces mono
-signed `int16_t` PCM at the exact rate passed to `nanotts_init()`.
+Supported sample rates are 8,000 through 24,000 Hz. Output is mono signed
+`int16_t` PCM at the exact initialized rate.
 
 ## One-call synthesis
 
 ```c
+options.style = NANOTTS_KO_STYLE_CLEAR_DEVICE;
+
 nanotts_speak_text(
     &tts,
     "문이 열렸습니다.",
@@ -36,55 +38,126 @@ nanotts_speak_text(
     &parse_info);
 ```
 
-The callback receives a temporary block. Return nonzero to abort synthesis.
+The callback receives a temporary PCM block. Return nonzero to abort.
 
 ## Parse and render separately
 
 ```c
-nanotts_parse_text(&tts, text, NANOTTS_NPOS, options.flags, &info);
+nanotts_text_options_t text_options;
+nanotts_default_text_options(&text_options);
+text_options.style = NANOTTS_KO_STYLE_MODERN_SEOUL;
+
+nanotts_parse_text_ex(
+    &tts, text, NANOTTS_NPOS, &text_options, &info);
+
+inspect(nanotts_morphemes(&tts), nanotts_morpheme_count(&tts));
 inspect(nanotts_events(&tts), nanotts_event_count(&tts));
+
 nanotts_render_events(&tts, &options, audio_write, user);
 ```
 
-This is useful for diagnostics and for caching event streams in an application.
-`nanotts_set_events()` accepts validated Korean acoustic events directly.
+`nanotts_parse_text()` remains as a convenience wrapper using the default style.
+`nanotts_set_events()` accepts validated acoustic events directly.
 
-## Options
+## Text options
 
-- `rate_q8`: `256` is normal speed; accepted range is 96 through 640.
-- `pitch_cents`: global pitch offset, `-1200..1200`.
-- `volume`: `0..255`.
-- `final_tone`: automatic, fall, rise, continue, or level.
-- `NANOTTS_OPT_LINK_EOJEOL`: allow connected-speech rules across spaces.
-- `NANOTTS_OPT_NO_AUTOPAUSE`: remove generated accentual-phrase pauses.
-- `NANOTTS_OPT_NO_BUILTIN_LEXICON`: bypass the compact exception lexicon.
+```c
+typedef struct nanotts_text_options {
+    uint16_t flags;
+    uint8_t style;
+    uint8_t reserved;
+} nanotts_text_options_t;
+```
 
-## Lexicon callback
+Important flags:
+
+```text
+NANOTTS_OPT_LINK_EOJEOL
+NANOTTS_OPT_NO_AUTOPAUSE
+NANOTTS_OPT_NO_BUILTIN_LEXICON
+NANOTTS_OPT_NO_MORPHOLOGY
+NANOTTS_OPT_NO_NORMALIZATION
+NANOTTS_OPT_SPELL_LATIN
+```
+
+The style must be chosen during parsing because it can alter pronunciation as
+well as timing.
+
+## Render options
+
+```text
+rate_q8        256 = normal speed
+pitch_cents    global pitch offset, -1200..1200
+volume         0..255
+final_tone     auto/fall/rise/continue/level
+style          same style used for parsing
+expression_q8  128 = normal pitch/prominence range
+```
+
+## Parse information
+
+`nanotts_parse_info_t` reports:
+
+```text
+event, syllable, token, and morpheme counts
+UTF-8 error byte and code point
+application/built-in lexicon hits
+normalization operations
+selected pronunciation variants
+```
+
+## Morpheme inspection
+
+```c
+const nanotts_morpheme_t *m = nanotts_morphemes(&tts);
+size_t count = nanotts_morpheme_count(&tts);
+```
+
+Each entry contains a syllable span, flags, token index, and compact POS ID.
+Use `nanotts_ko_pos_name()` for diagnostics.
+
+## Lexicon callbacks
+
+Legacy callback:
 
 ```c
 nanotts_set_lexicon(&tts, lookup, user);
 ```
 
-A successful lookup returns a UTF-8 Hangul pronunciation spelling. The callback
-owns the returned pointer and must keep it valid until it returns. The text is
-parsed immediately; NanoTTS does not retain that pointer.
+Extended callback:
+
+```c
+nanotts_set_lexicon_ex(&tts, lookup_ex, user);
+```
+
+The extended callback receives the style and may return morphology flags in
+addition to a Hangul pronunciation spelling. Application callbacks are checked
+before the built-in exception table.
 
 ## Event format
 
-Each event is four bytes:
+Each event is eight bytes:
 
 ```c
 typedef struct nanotts_event {
     uint8_t phone;
     uint8_t flags;
     uint8_t duration_percent;
-    int8_t pitch_semitones_q4;
+    int8_t  pitch_semitones_q4;
+    int8_t  pitch_end_semitones_q4;
+    uint8_t prominence_q8;
+    uint8_t acoustic_flags;
+    uint8_t reserved;
 } nanotts_event_t;
 ```
 
-This is the boundary between the Korean frontend and renderer. It is suitable
-for application-level caching, but it is not yet declared a stable serialized
-wire format across major versions.
+Pitch is a continuous start/end trajectory in sixteenth-semitone units.
+Prominence uses 128 as the neutral scale. Acoustic flags carry allophone and
+prosodic information such as palatalization, weak `ㅎ`, focus, command, and
+phrase-initial denasalization.
+
+This structure is suitable for in-process caching. It is not declared a stable
+serialized wire format across major versions.
 
 ## Static sizing
 
@@ -93,17 +166,14 @@ Compile-time controls:
 ```text
 NANOTTS_MAX_EVENTS
 NANOTTS_MAX_SYLLABLES
+NANOTTS_MAX_TOKENS
+NANOTTS_MAX_MORPHEMES
 NANOTTS_CONTEXT_BYTES
 NANOTTS_AUDIO_BLOCK
 NANOTTS_CONTROL_MS
 NANOTTS_COEFF_STRIDE
 ```
 
-`NANOTTS_CONTROL_MS` and `NANOTTS_COEFF_STRIDE` must be positive integers from
-1 through 4. Lower values improve trajectory resolution and coefficient
-smoothness but increase CPU cost. The default profile uses 1 ms and stride 2;
-the compact setup profile uses 2 ms and stride 4.
-
-The public size definitions must be identical for the library and consumer
-because `nanotts_t` contains the selected opaque byte count. CMake exports the
-required public definitions automatically.
+The public capacity definitions must match in the library and consumer because
+`nanotts_t` contains the configured opaque byte count. CMake exports these
+public definitions automatically.

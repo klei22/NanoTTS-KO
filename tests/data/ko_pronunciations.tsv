@@ -1,5 +1,6 @@
 # written	pronunciation spelling	kind
-# kind=lex requires the built-in exception lexicon; kind=rule is productive.
+# kind=lex requires the built-in exception lexicon; kind=morph requires
+# the compact morphology analyzer; kind=rule is spelling-productive.
 같이	가치	lex
 굳이	구지	lex
 맏이	마지	lex
@@ -73,6 +74,65 @@
 국립	궁닙	rule
 설날	설랄	rule
 읽어	일거	rule
-앉다	안따	rule
-젊다	점따	rule
+앉다	안따	morph
+젊다	점따	morph
 한 일	한 닐	rule
+
+# Standard Pronunciation Rules 23-28: productive and lexical contrasts.
+국밥	국빱	rule
+깎다	깍따	rule
+넋받이	넉빠지	rule
+삯돈	삭똔	rule
+닭장	닥짱	rule
+칡범	칙뻠	rule
+뻗대다	뻗때다	rule
+옷고름	옫꼬름	rule
+있던	읻떤	rule
+꽂고	꼳꼬	rule
+꽃다발	꼳따발	rule
+낯설다	낟썰다	rule
+밭갈이	받까리	rule
+솥전	솓쩐	rule
+곱돌	곱똘	rule
+덮개	덥깨	rule
+옆집	엽찝	rule
+넓죽하다	넙쭈카다	lex
+읊조리다	읍쪼리다	rule
+값지다	갑찌다	rule
+껴안다	껴안따	morph
+앉고	안꼬	morph
+얹다	언따	morph
+삼고	삼꼬	morph
+더듬지	더듬찌	morph
+닮고	담꼬	morph
+젊지	점찌	morph
+여덟도	여덜도	rule
+여덟과	여덜과	rule
+여덟보다	여덜보다	rule
+할 것을	할꺼슬	morph
+갈 데가	갈떼가	morph
+할 바를	할빠를	morph
+할 수는	할쑤는	morph
+할 적에	할쩌게	morph
+갈 곳	갈꼳	morph
+할 도리	할또리	morph
+만날 사람	만날싸람	morph
+문고리	문꼬리	lex
+눈동자	눈똥자	lex
+신바람	신빠람	lex
+산새	산쌔	lex
+손재주	손째주	lex
+길가	길까	lex
+물동이	물똥이	lex
+발바닥	발빠닥	lex
+굴속	굴쏙	lex
+술잔	술짠	lex
+바람결	바람껼	lex
+그믐달	그믐딸	lex
+아침밥	아침빱	lex
+잠자리	잠짜리	lex
+강가	강까	lex
+초승달	초승딸	lex
+등불	등뿔	lex
+창살	창쌀	lex
+강줄기	강쭐기	lex

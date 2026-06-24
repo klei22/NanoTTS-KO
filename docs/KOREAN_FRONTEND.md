@@ -1,146 +1,176 @@
-# Korean frontend
+# Korean linguistic frontend
 
 ## Scope
 
-The frontend targets compact, modern Seoul-oriented Korean pronunciation. It is
-rule based, deterministic, and does not require a morphological analyzer or a
-large runtime dictionary.
+NanoTTS-KO 2 uses a compact morphology-aware Korean frontend. It is designed to
+capture high-value pronunciation distinctions within a bounded MCU-friendly
+implementation; it is not a replacement for a full desktop morphological
+analyzer and large pronunciation dictionary.
 
 ## Hangul decoding
 
-Precomposed syllables are decomposed arithmetically from Unicode's Hangul
-syllable block into onset, vowel, and optional coda indices. Modern conjoining
-Jamo (`U+1100` series) are also accepted. Compatibility Jamo are intentionally
-not normalized in the core because general Unicode normalization would add
-code and tables.
+Precomposed Hangul syllables are decomposed arithmetically into onset, vowel,
+and coda indices. Modern conjoining Jamo are accepted. Compatibility Jamo are
+not generally normalized because a full Unicode normalization table would add
+substantial data.
 
-## Processing order
-
-The frontend stores four bytes per syllable and applies bounded in-place passes:
-
-1. Vowel-initial liaison and palatalization.
-2. Complex final-consonant resolution.
-3. `ㅎ` aspiration and deletion behavior.
-4. `ㄴ`/`ㄹ` lateral and nasal interactions.
-5. Seven-way final neutralization.
-6. Nasal assimilation.
-7. Post-coda tensification.
-8. Phone-event, timing, and accentual-phrase generation.
-
-Representative productive cases include:
+The frontend retains both:
 
 ```text
-국민  -> 궁민-like phone sequence
-신라  -> 실라
-먹다  -> 먹따
-학교  -> 학꾜
-꽃이  -> 꼬치
-많다  -> 만타
-설날  -> 설랄
-한 일 -> 한 닐 in connected speech
+lexical onset/coda   original spelling information
+surface onset/coda   mutable pronunciation result
 ```
 
-Sound changes may cross a space only when `NANOTTS_OPT_LINK_EOJEOL` is enabled.
-That flag is on by default for one-call synthesis. Clear it for careful,
-word-separated pronunciation.
+This prevents early coda neutralization from erasing information needed by
+later morphology-conditioned rules.
 
-## Lexical pronunciation
+## Token and morpheme metadata
 
-Some Korean tensification, `ㄴ` insertion, and complex-coda outcomes require
-lexical or morphological knowledge. The removable built-in lexicon covers a
-compact high-value set, including forms such as:
+Each token stores its source byte range, normalized syllable span, boundary,
+type, and analysis flags. Each morpheme stores:
 
 ```text
-서울역 -> 서울력
-꽃잎   -> 꼰닙
-식용유 -> 시굥뉴
-갈등   -> 갈뜽
+syllable span
+token index
+part of speech
+morphology flags
+```
+
+Recognized high-value categories include nouns, proper nouns, verb/adjective
+stems, endings, particles, suffixes, counters, numbers, and foreign material.
+
+## Important contextual distinctions
+
+### `신고`
+
+```text
+신을 신고   -> verbal 신-고; ending onset fortifies
+혼인 신고   -> noun 신고; onset remains lax
+```
+
+The compact analyzer uses object-particle and token context. Applications with
+more ambiguous syntax should provide a lexicon override.
+
+### Passive/causative versus nominalized `-기`
+
+```text
+안기다 -> passive/causative suffix; no fortition
+안기   -> nominalizer; fortition applies
+```
+
+The same mechanism covers a bounded set of common stems and is extensible.
+
+### Attributive `-(으)ㄹ`
+
+The analyzer recognizes both separate-syllable `-을` and coda `-ㄹ` forms when
+a plausible following noun is present:
+
+```text
+먹을 것
+할 수
+만날 사람
+갈 곳
+```
+
+This avoids globally interpreting every final `ㄹ` or `을` as an attributive
+ending.
+
+## Ordered surface rules
+
+The main passes are:
+
+1. Morphology-conditioned fortition.
+2. Compound/contextual `ㄴ` insertion candidates.
+3. Liaison and resyllabification.
+4. Palatalization.
+5. Complex-coda selection.
+6. `ㅎ` aspiration, weakening, and style-dependent deletion.
+7. Lateralization.
+8. Seven-coda neutralization.
+9. Nasal assimilation.
+10. Obstruent-conditioned fortition.
+11. Contextual phone/allophone expansion.
+
+The built-in regression corpus includes 133 written/pronunciation pairs covering
+productive rules and lexical outcomes.
+
+## Productive versus lexical behavior
+
+Some changes are productive and handled by rules:
+
+```text
+국밥   -> 국빱
+꽃이   -> 꼬치
+국민   -> 궁민
+신라   -> 실라
+많다   -> 만타
+할 수  -> 할쑤
+```
+
+Other classes are lexically restricted and remain dictionary entries:
+
+```text
 발전   -> 발쩐
-넓게   -> 널께
-떫지   -> 떨찌
+서울역 -> 서울력
+문고리 -> 문꼬리
+아침밥 -> 아침빱
+꽃잎   -> 꼰닙
 ```
 
-`tests/data/ko_pronunciations.tsv` contains 76 written/pronunciation pairs. The
-application lexicon is checked before the built-in table and can override any
-word.
-
-## Codas
-
-Surface codas are reduced to the Korean seven-coda system:
+A key negative contrast is preserved:
 
 ```text
-/k̚ n t̚ l m p̚ ŋ/
+여덟도 -> 여덜도
 ```
 
-The renderer has dedicated silent closure events for `/k̚ t̚ p̚/`; these do
-not emit a release burst.
+Noun `ㄼ` does not receive the verb-only fortition used in forms such as
+`넓게`.
 
-## Vowels and glides
+## Vowel and glide variants
 
-The acoustic inventory distinguishes:
+Styles can choose among permitted or common realizations:
 
 ```text
-a, eo, o, u, eu, i, ae, e, y, w, ui
+particle 의
+noninitial 의
+ㅒ/ㅖ variants
+modern ㅐ/ㅔ merger policy
+맛있다 / 멋있다 prescriptive versus modern variants
 ```
 
-Compound Hangul vowels are represented as glide-plus-vowel sequences. Modern
-`ㅚ` is rendered as `w + e`. Initial `의` uses the moving `ui` nucleus, whose
-formants travel from `/ɯ/` toward `/i/`; after a consonantal onset, `ㅢ` defaults
-to `i` in this compact modern-oriented policy.
+Initial `의` uses a moving `/ɯi/` event in careful styles. Glides are emitted as
+trajectories rather than full static vowels.
 
-## Timing
+## Sibilant allophones
 
-The frontend applies context-specific duration percentages rather than leaving
-all phones at table defaults:
-
-- AP-initial and medial lax/tense/aspirated onsets differ;
-- glides are shorter than full vowels;
-- vowels in closed syllables are slightly shorter;
-- AP-final and phrase-final vowels/codas are lengthened;
-- coda sonorants are shorter and darker than onsets;
-- automatic AP pauses can be disabled.
-
-## Accentual phrases
-
-Text is grouped into bounded accentual phrases using syllable and word limits.
-The first onset selects a low-initial or high-initial pattern; tense,
-aspirated, fricative, and `ㅎ` onsets begin high. Targets are stored in the
-existing event records, so the renderer does not inspect Korean orthography.
-
-Commas create continuation boundaries. Question marks place a rise on the
-corresponding phrase boundary, including internal questions followed by more
-text.
-
-## Numbers and Latin letters
-
-Unsigned decimal integers are expanded through `조`. A leading-zero sequence is
-read digit by digit, which suits identifiers such as `007` or `010`. ASCII
-letters are spoken using Korean letter names.
-
-This is not a complete Korean text-normalization system. Dates, decimal points,
-currency, units, telephone grouping, counters, and context-sensitive native
-number forms should be normalized by the application when exact wording
-matters.
+`ㅅ` and `ㅆ` before `/i/` and y-glides receive explicit palatalized phone IDs.
+This allows separate noise spectra and prevents tests or voice data from
+pretending that all Korean sibilants are acoustically identical.
 
 ## Application lexicon
 
-Overrides return a UTF-8 Hangul pronunciation spelling:
+The extended callback receives style and can attach morphology flags:
 
 ```c
-static int lookup(
+static int lookup_ex(
     void *user,
+    nanotts_ko_style_t style,
     const char *word,
     size_t word_bytes,
     const char **spoken,
-    size_t *spoken_bytes)
-{
-    if (matches(word, word_bytes, "제품명")) {
-        *spoken = "원하는발음";
-        *spoken_bytes = NANOTTS_NPOS;
-        return 1;
-    }
-    return 0;
-}
+    size_t *spoken_bytes,
+    uint16_t *morph_flags);
 ```
 
-The callback runs once per Hangul token, never in the DSP loop.
+Return a Hangul pronunciation spelling. The text is parsed immediately; the
+library does not retain the returned pointer.
+
+Use this for proper names, product names, Hanja-derived vocabulary, specialized
+compounds, and preferred regional variants.
+
+## Remaining linguistic limitations
+
+The built-in analyzer does not provide unrestricted lemma recovery, Hanja
+reading, full Korean compound segmentation, statistical parse ranking, English
+loanword G2P, or a large proper-name dictionary. Ambiguous inputs can therefore
+still require an override or host-side normalization.

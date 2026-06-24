@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.0.0-ko
+
+- Replaced the spelling-only frontend with statically bounded token, morpheme,
+  POS, and morphology metadata.
+- Added semantic normalization for native/Sino numbers, counters, dates, times,
+  decimals, fractions, percentages, telephone-like strings, dotted versions,
+  currency, temperature, Latin acronyms, and common MCU units.
+- Added morphology-conditioned readings for verbal versus nominal `신고`,
+  passive/causative versus nominalized `-기`, and attributive `-(으)ㄹ`.
+- Reordered phonology so morphology-sensitive fortition runs before liaison,
+  complex-coda reduction, and coda neutralization.
+- Corrected overgeneralization of verb-only fortition to noun clusters such as
+  `여덟도`.
+- Expanded the independently authored pronunciation regression corpus from 76
+  to 133 pairs, including the standard Rule 23-28 examples and lexical compound
+  fortition.
+- Added prescriptive, modern-Seoul, clear-device, conversational, and learner
+  pronunciation/prosody profiles.
+- Added clause-local yes/no, wh-question, command, statement, and continuation
+  contours; question modality no longer leaks into a later clause.
+- Expanded acoustic events from four to eight bytes with continuous pitch
+  endpoints, prominence, and Korean allophone/prosody flags.
+- Added explicit palatalized lax and tense sibilants, weak-`ㅎ` and optional
+  phrase-initial denasalization cues.
+- Added extended lexicon callbacks with style and morphology information.
+- Added 60,000 randomized Hangul and mixed-text parser cases and dedicated
+  morphology, normalization, style, and prosody tests.
+- Increased the full and compact static profiles to hold the richer linguistic
+  representation; normalization, morphology, and the built-in lexicon remain
+  independently removable.
+
+## 1.3.0-ko
+
+- Reworked connected-phone joins around a shared acoustic midpoint instead of
+  treating every event boundary as an instantaneous source/filter switch.
+- Added pair-specific overlap windows for nasal, sonorant, fricative,
+  affricate, and stop transitions.
+- Removed artificial attack/release dips between continuously voiced
+  sonorants.
+- Added gradual frication and aspiration onset/offset envelopes, including
+  lower-noise affricate tails into following vowels.
+- Prevented inactive voiced and noise filter paths from accumulating hidden
+  state that could reappear as a transient.
+- Added a short sample-domain boundary bridge with pair-specific slope limits;
+  it corrects residual filter-state mismatch while preserving stop releases.
+- Added generalized adjacent-nasal duration overlap, improving sequences such
+  as `ㅁㄴ` in `합니다` without a phrase-specific pronunciation exception.
+- Added regression coverage for the `ㅁ→ㅅ` and `ㅁ→ㄴ` joins in
+  `감사합니다`, plus a transition-heavy corpus analysis.
+
 ## 1.2.0-ko
 
 - Replaced direct-form-I filter state with transposed direct-form II for a

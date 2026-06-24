@@ -45,6 +45,11 @@ static const nanotts_phone_def_t PHONE_DEFS[NANOTTS_PH_COUNT] = {
 
     DEF(NANOTTS_KIND_FRICATIVE_LAX,112,0,245,90,215,132,118,30, 430,1900,3200,4500,430,1900,3200,4500,5700,2500),
     DEF(NANOTTS_KIND_FRICATIVE_TENSE,94,0,255,6,224,74,90,38, 430,1950,3250,4550,430,1950,3250,4550,6000,2200),
+    /* Korean plain and tense sibilants before /i/ and y-glides are strongly
+     * palatalized. Separate
+     * spectral targets avoid treating it as only a frontend label. */
+    DEF(NANOTTS_KIND_FRICATIVE_LAX,116,0,242,96,212,134,120,28, 390,2200,3150,4200,390,2200,3150,4200,4450,2350),
+    DEF(NANOTTS_KIND_FRICATIVE_TENSE,98,0,255,7,223,76,90,38, 390,2250,3200,4300,390,2250,3200,4300,4780,2050),
     DEF(NANOTTS_KIND_FRICATIVE_H,76,0,145,225,182,150,145,18, 500,1500,2500,3500,500,1500,2500,3500,1450,2800),
 
     DEF(NANOTTS_KIND_NASAL,80,226,4,1,198,120,130,0, 260,850,2150,3200,260,850,2150,3200,0,0),
@@ -68,7 +73,7 @@ static const char *const PHONE_NAMES[NANOTTS_PH_COUNT] = {
     "a","eo","o","u","eu","i","ae","e","y","w",
     "g/k-lax","kk-tense","kh-asp","d/t-lax","tt-tense","th-asp",
     "b/p-lax","pp-tense","ph-asp","j-lax","jj-tense","ch-asp",
-    "s-lax","ss-tense","h","m","n","ng","l","r-tap",
+    "s-lax","ss-tense","s-pal","ss-pal","h","m","n","ng","l","r-tap",
     "k-coda","t-coda","p-coda","ui"
 };
 

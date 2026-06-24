@@ -39,13 +39,19 @@ static void usage(FILE *f)
       "  --rate PERCENT           Speaking rate, 38..250 (default: 100)\n"
       "  --pitch CENTS            Global pitch, -1200..1200\n"
       "  --volume 0..255          Output volume (default: 220)\n"
+      "  --style NAME             prescriptive, modern, clear, conversational,\n"
+      "                           or learner (default: modern)\n"
+      "  --expression PERCENT     Prosodic range, 45..165 (default: 100)\n"
       "  --final auto|fall|rise|continue|level\n"
       "  --pwm-top N              Timer TOP/ARR for PWM output (default: 1023)\n"
       "  --pwm-inverted           Invert PWM compare values\n"
       "  --no-link                Disable sound changes across spaces\n"
       "  --no-autopause           Suppress automatic accent-phrase pauses\n"
       "  --no-lexicon             Disable built-in exception lexicon\n"
-      "  --dump-phones            Print generated phone events\n"
+      "  --no-morphology          Use spelling-only analysis\n"
+      "  --no-normalization       Spell numbers/Latin text literally\n"
+      "  --dump-morph             Print morpheme and POS analysis\n"
+      "  --dump-phones            Print generated acoustic events\n"
       "  --version                Print version\n"
       "  -h, --help               Show this help\n",
       nanotts_version_string());
@@ -119,18 +125,45 @@ static void dump_events(const nanotts_t *tts)
 {
     const nanotts_event_t *e=nanotts_events(tts);size_t i,n=nanotts_event_count(tts);
     for(i=0u;i<n;++i){
-        printf("%4lu  %-12s dur=%3u%% pitch=%+.2f st flags=0x%02x\n",
+        printf("%4lu  %-12s dur=%3u%% pitch=%+.2f->%+.2f st prom=%3u "
+               "flags=0x%02x acoustic=0x%02x\n",
           (unsigned long)i,nanotts_phone_name((nanotts_phone_t)e[i].phone),
-          (unsigned)e[i].duration_percent,(double)e[i].pitch_semitones_q4/16.0,
-          (unsigned)e[i].flags);
+          (unsigned)e[i].duration_percent,
+          (double)e[i].pitch_semitones_q4/16.0,
+          (double)e[i].pitch_end_semitones_q4/16.0,
+          (unsigned)e[i].prominence_q8,(unsigned)e[i].flags,
+          (unsigned)e[i].acoustic_flags);
     }
+}
+
+static void dump_morphemes(const nanotts_t *tts)
+{
+    const nanotts_morpheme_t *m=nanotts_morphemes(tts);
+    size_t i,n=nanotts_morpheme_count(tts);
+    for(i=0u;i<n;++i){
+        printf("morph %3lu token=%u syllables=%u+%u pos=%-14s flags=0x%04x\n",
+               (unsigned long)i,(unsigned)m[i].token_index,
+               (unsigned)m[i].syllable_start,(unsigned)m[i].syllable_count,
+               nanotts_ko_pos_name((nanotts_ko_pos_t)m[i].pos),
+               (unsigned)m[i].flags);
+    }
+}
+
+static int parse_style(const char *s,nanotts_ko_style_t *style)
+{
+    if(!strcmp(s,"prescriptive")){*style=NANOTTS_KO_STYLE_PRESCRIPTIVE;return 1;}
+    if(!strcmp(s,"modern")||!strcmp(s,"modern-seoul")){*style=NANOTTS_KO_STYLE_MODERN_SEOUL;return 1;}
+    if(!strcmp(s,"clear")||!strcmp(s,"clear-device")){*style=NANOTTS_KO_STYLE_CLEAR_DEVICE;return 1;}
+    if(!strcmp(s,"conversational")){*style=NANOTTS_KO_STYLE_CONVERSATIONAL;return 1;}
+    if(!strcmp(s,"learner")){*style=NANOTTS_KO_STYLE_LEARNER;return 1;}
+    return 0;
 }
 
 int main(int argc,char **argv)
 {
     const char *text_arg=NULL,*text_file=NULL,*out_path="out.wav";
     char *owned_text=NULL;size_t text_len=NANOTTS_NPOS;output_format_t format=FORMAT_WAV;
-    uint32_t sample_rate=16000u;uint16_t pwm_top=1023u;int pwm_inverted=0,dump=0;
+    uint32_t sample_rate=16000u;uint16_t pwm_top=1023u;int pwm_inverted=0,dump=0,dump_morph=0;
     nanotts_options_t options;nanotts_parse_info_t info;nanotts_t tts;
     int i;FILE *out=NULL;nanotts_result_t r;
     nanotts_default_options(&options);
@@ -149,12 +182,21 @@ int main(int argc,char **argv)
         if(!strcmp(a,"--rate")&&i+1<argc){long v;if(!parse_long(argv[++i],38,250,&v)){fprintf(stderr,"invalid rate\n");return 2;}options.rate_q8=(uint16_t)((v*256+50)/100);continue;}
         if(!strcmp(a,"--pitch")&&i+1<argc){long v;if(!parse_long(argv[++i],-1200,1200,&v)){fprintf(stderr,"invalid pitch\n");return 2;}options.pitch_cents=(int16_t)v;continue;}
         if(!strcmp(a,"--volume")&&i+1<argc){long v;if(!parse_long(argv[++i],0,255,&v)){fprintf(stderr,"invalid volume\n");return 2;}options.volume=(uint8_t)v;continue;}
+        if(!strcmp(a,"--style")&&i+1<argc){nanotts_ko_style_t style;
+            if(!parse_style(argv[++i],&style)){fprintf(stderr,"invalid Korean style\n");return 2;}
+            options.style=(uint8_t)style;continue;}
+        if(!strcmp(a,"--expression")&&i+1<argc){long v;
+            if(!parse_long(argv[++i],45,165,&v)){fprintf(stderr,"invalid expression percent\n");return 2;}
+            options.expression_q8=(uint8_t)((v*128+50)/100);continue;}
         if(!strcmp(a,"--pwm-top")&&i+1<argc){long v;if(!parse_long(argv[++i],1,65535,&v)){fprintf(stderr,"invalid PWM TOP\n");return 2;}pwm_top=(uint16_t)v;continue;}
         if(!strcmp(a,"--pwm-inverted")){pwm_inverted=1;continue;}
         if(!strcmp(a,"--dump-phones")){dump=1;continue;}
-        if(!strcmp(a,"--no-link")){options.flags=(uint8_t)(options.flags&~NANOTTS_OPT_LINK_EOJEOL);continue;}
+        if(!strcmp(a,"--dump-morph")){dump_morph=1;continue;}
+        if(!strcmp(a,"--no-link")){options.flags=(uint16_t)(options.flags&~NANOTTS_OPT_LINK_EOJEOL);continue;}
         if(!strcmp(a,"--no-autopause")){options.flags|=NANOTTS_OPT_NO_AUTOPAUSE;continue;}
         if(!strcmp(a,"--no-lexicon")){options.flags|=NANOTTS_OPT_NO_BUILTIN_LEXICON;continue;}
+        if(!strcmp(a,"--no-morphology")){options.flags|=NANOTTS_OPT_NO_MORPHOLOGY;continue;}
+        if(!strcmp(a,"--no-normalization")){options.flags|=NANOTTS_OPT_NO_NORMALIZATION;continue;}
         if(!strcmp(a,"--final")&&i+1<argc){const char *v=argv[++i];
             if(!strcmp(v,"auto"))options.final_tone=NANOTTS_FINAL_AUTO;
             else if(!strcmp(v,"fall"))options.final_tone=NANOTTS_FINAL_FALL;
@@ -173,11 +215,18 @@ int main(int argc,char **argv)
         if(!in){perror(text_file);return 1;}owned_text=read_all(in,&text_len);if(in!=stdin)fclose(in);
         if(!owned_text){fprintf(stderr,"unable to read input\n");return 1;}text_arg=owned_text;}
     r=nanotts_init(&tts,sample_rate);if(r!=NANOTTS_OK){fprintf(stderr,"init: %s\n",nanotts_strerror(r));free(owned_text);return 1;}
-    r=nanotts_parse_text(&tts,text_arg,text_len,options.flags,&info);
+    {
+        nanotts_text_options_t text_options;
+        nanotts_default_text_options(&text_options);
+        text_options.flags=options.flags;
+        text_options.style=options.style;
+        r=nanotts_parse_text_ex(&tts,text_arg,text_len,&text_options,&info);
+    }
     if(r!=NANOTTS_OK){fprintf(stderr,"parse: %s",nanotts_strerror(r));
         if(info.error_byte!=NANOTTS_NPOS)
             fprintf(stderr," at byte %lu",(unsigned long)info.error_byte);
         fputc('\n',stderr);free(owned_text);return 1;}
+    if(dump_morph)dump_morphemes(&tts);
     if(dump)dump_events(&tts);
     if(!strcmp(out_path,"-")&&format==FORMAT_WAV){fprintf(stderr,"WAV output requires a seekable file\n");free(owned_text);return 2;}
     out=!strcmp(out_path,"-")?stdout:fopen(out_path,"wb");if(!out){perror(out_path);free(owned_text);return 1;}

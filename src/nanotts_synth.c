@@ -167,8 +167,10 @@ static bool syllable_onset(const nanotts_impl_t *impl,size_t at,
 static bool is_coronal(nanotts_phone_t p)
 {
     return p==NANOTTS_PH_T_LAX||p==NANOTTS_PH_T_TENSE||p==NANOTTS_PH_T_ASP||
-           p==NANOTTS_PH_S_LAX||p==NANOTTS_PH_S_TENSE||p==NANOTTS_PH_N||
-           p==NANOTTS_PH_L||p==NANOTTS_PH_R||p==NANOTTS_PH_T_CODA;
+           p==NANOTTS_PH_S_LAX||p==NANOTTS_PH_S_TENSE||
+           p==NANOTTS_PH_S_LAX_PAL||p==NANOTTS_PH_S_TENSE_PAL||
+           p==NANOTTS_PH_N||p==NANOTTS_PH_L||p==NANOTTS_PH_R||
+           p==NANOTTS_PH_T_CODA;
 }
 static bool is_velar(nanotts_phone_t p)
 {
@@ -183,7 +185,42 @@ static bool is_labial(nanotts_phone_t p)
 static bool is_palatal(nanotts_phone_t p)
 {
     return p==NANOTTS_PH_C_LAX||p==NANOTTS_PH_C_TENSE||p==NANOTTS_PH_C_ASP||
+           p==NANOTTS_PH_S_LAX_PAL||p==NANOTTS_PH_S_TENSE_PAL||
            p==NANOTTS_PH_Y;
+}
+
+static bool is_nasal_phone(nanotts_phone_t p)
+{
+    return p==NANOTTS_PH_M||p==NANOTTS_PH_N||p==NANOTTS_PH_NG;
+}
+
+static bool kind_is_sonorant(nanotts_phone_kind_t k)
+{
+    return k==NANOTTS_KIND_VOWEL||k==NANOTTS_KIND_GLIDE||
+           k==NANOTTS_KIND_NASAL||k==NANOTTS_KIND_LATERAL||
+           k==NANOTTS_KIND_TAP;
+}
+
+static bool kind_is_fricative(nanotts_phone_kind_t k)
+{
+    return k==NANOTTS_KIND_FRICATIVE_LAX||
+           k==NANOTTS_KIND_FRICATIVE_TENSE||
+           k==NANOTTS_KIND_FRICATIVE_H;
+}
+
+static bool kind_is_affricate(nanotts_phone_kind_t k)
+{
+    return k==NANOTTS_KIND_AFFRICATE_LAX||
+           k==NANOTTS_KIND_AFFRICATE_TENSE||
+           k==NANOTTS_KIND_AFFRICATE_ASP;
+}
+
+static bool kind_is_stop_like(nanotts_phone_kind_t k)
+{
+    return k==NANOTTS_KIND_STOP_LAX||k==NANOTTS_KIND_STOP_TENSE||
+           k==NANOTTS_KIND_STOP_ASP||k==NANOTTS_KIND_AFFRICATE_LAX||
+           k==NANOTTS_KIND_AFFRICATE_TENSE||k==NANOTTS_KIND_AFFRICATE_ASP||
+           k==NANOTTS_KIND_CODA_STOP;
 }
 
 static bool consonant_locus(nanotts_phone_t p,const nanotts_params_t *v,float out[4])
@@ -256,6 +293,35 @@ static void base_params(nanotts_phone_t phone,const nanotts_phone_def_t *d,
     p->nasal=0.0f; p->source_open=q8(d->open_q8);
     p->source_return=nanotts_clampf(1.34f-p->source_open,0.18f,0.88f);
     p->source_tilt=q8(d->tilt_q8);
+}
+
+static void params_mix(nanotts_params_t *out,
+                       const nanotts_params_t *a,
+                       const nanotts_params_t *b,float t)
+{
+    unsigned i;
+    t=nanotts_clampf(t,0.0f,1.0f);
+    for(i=0u;i<4u;++i){
+        out->f[i]=nanotts_lerp(a->f[i],b->f[i],t);
+        out->bw[i]=nanotts_lerp(a->bw[i],b->bw[i],t);
+        out->detail_gain[i]=nanotts_lerp(a->detail_gain[i],b->detail_gain[i],t);
+    }
+    out->voiced=nanotts_lerp(a->voiced,b->voiced,t);
+    out->noise=nanotts_lerp(a->noise,b->noise,t);
+    out->aspiration=nanotts_lerp(a->aspiration,b->aspiration,t);
+    out->amplitude=nanotts_lerp(a->amplitude,b->amplitude,t);
+    out->noise_center=nanotts_lerp(a->noise_center,b->noise_center,t);
+    out->noise_bw=nanotts_lerp(a->noise_bw,b->noise_bw,t);
+    out->nasal=nanotts_lerp(a->nasal,b->nasal,t);
+    for(i=0u;i<2u;++i){
+        out->nasal_pole[i]=nanotts_lerp(a->nasal_pole[i],b->nasal_pole[i],t);
+        out->nasal_bw[i]=nanotts_lerp(a->nasal_bw[i],b->nasal_bw[i],t);
+        out->nasal_zero[i]=nanotts_lerp(a->nasal_zero[i],b->nasal_zero[i],t);
+        out->nasal_zero_bw[i]=nanotts_lerp(a->nasal_zero_bw[i],b->nasal_zero_bw[i],t);
+    }
+    out->source_open=nanotts_lerp(a->source_open,b->source_open,t);
+    out->source_return=nanotts_lerp(a->source_return,b->source_return,t);
+    out->source_tilt=nanotts_lerp(a->source_tilt,b->source_tilt,t);
 }
 
 static void apply_coarticulation(const nanotts_impl_t *impl,size_t index,
@@ -361,35 +427,42 @@ static void kind_envelope(const nanotts_impl_t *impl,size_t index,float x,
     bool has_prev=adjacent(impl,index,-1,&prev),has_next=adjacent(impl,index,1,&next);
     bool intervocalic=has_prev&&has_next&&nanotts_phone_is_sonorant(prev)&&
                       nanotts_phone_is_vowel(next);
+    bool prev_sonorant=has_prev&&nanotts_phone_is_sonorant(prev);
+    bool next_sonorant=has_next&&nanotts_phone_is_sonorant(next);
     bool coda_sonorant=(k==NANOTTS_KIND_NASAL||k==NANOTTS_KIND_LATERAL)&&
         has_prev&&nanotts_phone_is_vowel(prev)&&
         (index+1u>=impl->event_count||
          nanotts_phone_is_pause((nanotts_phone_t)impl->events[index+1u].phone)||
          (impl->events[index+1u].flags&NANOTTS_EVENT_SYLLABLE_START)!=0u);
     bool ap_initial=(impl->events[index].flags&NANOTTS_EVENT_AP_START)!=0u;
-    float attack=nanotts_smoothstep(elapsed_ms/6.0f);
-    float release=nanotts_smoothstep((total_ms-elapsed_ms)/8.0f);
-    float env=attack<release?attack:release;
+    float attack=nanotts_smoothstep(elapsed_ms/7.0f);
+    float release=nanotts_smoothstep((total_ms-elapsed_ms)/9.0f);
+    float voiced_attack=prev_sonorant?1.0f:0.18f+0.82f*attack;
+    float voiced_release=next_sonorant?1.0f:0.18f+0.82f*release;
+    float voiced_env=voiced_attack<voiced_release?voiced_attack:voiced_release;
+    float noise_attack=nanotts_smoothstep(elapsed_ms/10.0f);
+    float noise_release=nanotts_smoothstep((total_ms-elapsed_ms)/11.0f);
+    float noise_env=noise_attack*noise_release;
     switch(k){
     case NANOTTS_KIND_PAUSE:
         p->voiced=p->noise=p->aspiration=p->amplitude=0.0f; break;
     case NANOTTS_KIND_VOWEL:
-        p->amplitude*=0.76f+0.24f*env; p->aspiration+=0.008f; break;
+        p->amplitude*=0.58f+0.42f*voiced_env; p->aspiration+=0.008f; break;
     case NANOTTS_KIND_GLIDE:
-        p->amplitude*=0.61f+0.39f*env; p->voiced*=0.94f; break;
+        p->amplitude*=0.50f+0.50f*voiced_env; p->voiced*=0.94f; break;
     case NANOTTS_KIND_NASAL:
-        p->amplitude*=0.70f+0.30f*env; p->nasal=0.96f;
+        p->amplitude*=0.44f+0.56f*voiced_env; p->nasal=0.96f;
         set_nasal_profile(p,phone);
-        if(coda_sonorant){
-            float tail=1.0f-0.16f*nanotts_smoothstep(x);
-            p->amplitude*=0.88f*tail;p->voiced*=0.96f;
+        if(coda_sonorant&&!next_sonorant){
+            float tail=1.0f-0.13f*nanotts_smoothstep(x);
+            p->amplitude*=0.91f*tail;p->voiced*=0.97f;
         }
         break;
     case NANOTTS_KIND_LATERAL:
-        p->amplitude*=0.66f+0.34f*env;
-        if(coda_sonorant){
+        p->amplitude*=0.48f+0.52f*voiced_env;
+        if(coda_sonorant&&!next_sonorant){
             p->f[0]=320.0f;p->f[1]=1080.0f;p->f[2]=2480.0f;p->f[3]=3480.0f;
-            p->bw[1]=205.0f;p->amplitude*=0.84f*(1.0f-0.12f*nanotts_smoothstep(x));
+            p->bw[1]=205.0f;p->amplitude*=0.88f*(1.0f-0.10f*nanotts_smoothstep(x));
         }
         break;
     case NANOTTS_KIND_TAP:{
@@ -400,7 +473,7 @@ static void kind_envelope(const nanotts_impl_t *impl,size_t index,float x,
         else if(distance>=6.4f)gate=1.0f;
         else gate=nanotts_lerp(0.10f,1.0f,
              nanotts_smoothstep((distance-3.2f)/3.2f));
-        p->voiced*=gate;p->amplitude*=0.60f+0.40f*env;break;}
+        p->voiced*=gate;p->amplitude*=0.54f+0.46f*voiced_env;break;}
     case NANOTTS_KIND_CODA_STOP:{
         float tail=1.0f-nanotts_smoothstep(elapsed_ms/6.0f);
         p->voiced=0.08f*tail; p->noise=p->aspiration=0.0f;
@@ -449,22 +522,25 @@ static void kind_envelope(const nanotts_impl_t *impl,size_t index,float x,
         }else{
             float den=total_ms-closure;
             float t=den>1.0f?nanotts_smoothstep((elapsed_ms-closure)/den):1.0f;
-            p->voiced=0.0f;p->noise*=1.0f-0.38f*t;
+            p->voiced=0.0f;p->noise*=1.0f-0.84f*t;
             p->aspiration=(k==NANOTTS_KIND_AFFRICATE_ASP?0.82f:
-                           (k==NANOTTS_KIND_AFFRICATE_LAX?0.20f:0.015f))*(1.0f-0.62f*t);
+                           (k==NANOTTS_KIND_AFFRICATE_LAX?0.20f:0.015f))*(1.0f-0.88f*t);
             p->amplitude*=0.88f;
         } break;}
-    case NANOTTS_KIND_FRICATIVE_LAX:
-        p->voiced=0.0f;p->noise*=0.80f+0.20f*env;p->aspiration=0.14f;
-        p->amplitude*=0.88f;break;
-    case NANOTTS_KIND_FRICATIVE_TENSE:
-        p->voiced=0.0f;p->noise*=0.90f+0.10f*env;p->aspiration=0.008f;
-        p->amplitude*=0.92f;break;
-    case NANOTTS_KIND_FRICATIVE_H:
-        p->voiced=0.0f;p->noise*=0.32f;p->aspiration*=0.72f+0.28f*env;
+    case NANOTTS_KIND_FRICATIVE_LAX:{
+        float ramp=0.08f+0.92f*noise_env;
+        p->voiced=0.0f;p->noise*=ramp;p->aspiration=0.14f*ramp;
+        p->amplitude*=0.88f;break;}
+    case NANOTTS_KIND_FRICATIVE_TENSE:{
+        float ramp=0.08f+0.92f*noise_env;
+        p->voiced=0.0f;p->noise*=ramp;p->aspiration=0.008f*ramp;
+        p->amplitude*=0.92f;break;}
+    case NANOTTS_KIND_FRICATIVE_H:{
+        float ramp=0.10f+0.90f*noise_env;
+        p->voiced=0.0f;p->noise*=0.32f*ramp;p->aspiration*=ramp;
         p->amplitude*=0.74f;
         if(intervocalic){p->noise*=0.62f;p->aspiration*=0.70f;p->amplitude*=0.82f;}
-        break;
+        break;}
     default: break;
     }
     /* A digital cut from an arbitrary waveform value to exact zero is heard
@@ -480,13 +556,143 @@ static void kind_envelope(const nanotts_impl_t *impl,size_t index,float x,
     if(phone==NANOTTS_PH_NG){p->f[1]=1120.0f;p->f[2]=2320.0f;}
 }
 
-static void params_for_event(const nanotts_impl_t *impl,size_t index,float progress,
-                             float elapsed_ms,float total_ms,nanotts_params_t *p)
+static void params_for_event_raw(const nanotts_impl_t *impl,size_t index,
+                                 float progress,float elapsed_ms,float total_ms,
+                                 nanotts_params_t *p)
 {
     nanotts_phone_t ph=(nanotts_phone_t)impl->events[index].phone;
     const nanotts_phone_def_t *d=nanotts_phone_def(ph);
     base_params(ph,d,progress,p); apply_coarticulation(impl,index,progress,d,p);
     kind_envelope(impl,index,progress,elapsed_ms,total_ms,d,p);
+    {
+        const nanotts_event_t *event=&impl->events[index];
+        float prominence=nanotts_clampf((float)event->prominence_q8/128.0f,
+                                        0.72f,1.36f);
+        p->amplitude*=0.88f+0.12f*prominence;
+        if((event->acoustic_flags&NANOTTS_ACOUSTIC_FOCUSED)!=0u){
+            p->amplitude*=1.04f;
+            p->source_tilt=nanotts_clampf(p->source_tilt-0.035f,0.04f,0.96f);
+        }
+        if((event->acoustic_flags&NANOTTS_ACOUSTIC_WEAK_H)!=0u &&
+           d->kind==NANOTTS_KIND_FRICATIVE_H){
+            p->noise*=0.56f;
+            p->aspiration*=0.64f;
+            p->amplitude*=0.74f;
+        }
+        if((event->acoustic_flags&NANOTTS_ACOUSTIC_DENASALIZED)!=0u &&
+           d->kind==NANOTTS_KIND_NASAL){
+            float onset=1.0f-nanotts_smoothstep(progress/0.52f);
+            p->nasal*=1.0f-0.55f*onset;
+            p->voiced*=1.0f-0.28f*onset;
+            p->aspiration+=0.12f*onset;
+            p->noise+=0.035f*onset;
+        }
+    }
+    p->voiced=nanotts_clampf(p->voiced,0.0f,1.0f);
+    p->noise=nanotts_clampf(p->noise,0.0f,1.25f);
+    p->aspiration=nanotts_clampf(p->aspiration,0.0f,1.25f);
+    p->amplitude=nanotts_clampf(p->amplitude,0.0f,1.20f);
+}
+
+static float event_duration_ms(const nanotts_impl_t *impl,size_t index,
+                               const nanotts_options_t *o)
+{
+    nanotts_phone_t ph=(nanotts_phone_t)impl->events[index].phone;
+    const nanotts_phone_def_t *d=nanotts_phone_def(ph);
+    uint32_t rate=o->rate_q8?o->rate_q8:256u;
+    return (float)d->duration_ms*(float)impl->events[index].duration_percent*
+           2.56f/(float)rate;
+}
+
+static float boundary_transition_ms(nanotts_phone_t a,nanotts_phone_t b)
+{
+    nanotts_phone_kind_t ka=(nanotts_phone_kind_t)nanotts_phone_def(a)->kind;
+    nanotts_phone_kind_t kb=(nanotts_phone_kind_t)nanotts_phone_def(b)->kind;
+    if(ka==NANOTTS_KIND_PAUSE||kb==NANOTTS_KIND_PAUSE)return 0.0f;
+    if(is_nasal_phone(a)&&is_nasal_phone(b))return 17.0f;
+    if((is_nasal_phone(a)||is_nasal_phone(b))&&
+       kind_is_sonorant(ka)&&kind_is_sonorant(kb))return 14.0f;
+    if(kind_is_sonorant(ka)&&kind_is_sonorant(kb))return 11.0f;
+    if((is_nasal_phone(a)&&kind_is_fricative(kb))||
+       (kind_is_fricative(ka)&&is_nasal_phone(b)))return 12.0f;
+    if((kind_is_sonorant(ka)&&kind_is_fricative(kb))||
+       (kind_is_fricative(ka)&&kind_is_sonorant(kb)))return 10.0f;
+    if((kind_is_affricate(ka)&&kind_is_sonorant(kb))||
+       (kind_is_sonorant(ka)&&kind_is_affricate(kb)))return 8.0f;
+    if(kind_is_stop_like(ka)||kind_is_stop_like(kb))return 2.5f;
+    if(kind_is_fricative(ka)||kind_is_fricative(kb)||
+       kind_is_affricate(ka)||kind_is_affricate(kb))return 7.0f;
+    return 5.0f;
+}
+
+static size_t boundary_bridge_samples(const nanotts_impl_t *impl,
+                                      nanotts_phone_t a,nanotts_phone_t b)
+{
+    nanotts_phone_kind_t ka=(nanotts_phone_kind_t)nanotts_phone_def(a)->kind;
+    nanotts_phone_kind_t kb=(nanotts_phone_kind_t)nanotts_phone_def(b)->kind;
+    uint32_t micros;
+    if(ka==NANOTTS_KIND_PAUSE||kb==NANOTTS_KIND_PAUSE)return 0u;
+    if(kind_is_sonorant(ka)&&kind_is_sonorant(kb))micros=2600u;
+    else if(kind_is_fricative(ka)||kind_is_fricative(kb))micros=1800u;
+    else if(kind_is_stop_like(ka)||kind_is_stop_like(kb))micros=850u;
+    else micros=1300u;
+    return ((size_t)impl->sample_rate*(size_t)micros+999999u)/1000000u;
+}
+
+static float boundary_slope_limit(nanotts_phone_t a,nanotts_phone_t b)
+{
+    nanotts_phone_kind_t ka=(nanotts_phone_kind_t)nanotts_phone_def(a)->kind;
+    nanotts_phone_kind_t kb=(nanotts_phone_kind_t)nanotts_phone_def(b)->kind;
+    if(kind_is_sonorant(ka)&&kind_is_sonorant(kb))return 0.0060f;
+    if(kind_is_fricative(ka)||kind_is_fricative(kb)||
+       kind_is_affricate(ka)||kind_is_affricate(kb))return 0.0090f;
+    return 0.0120f;
+}
+
+/* A phone boundary is not an acoustic instant.  Articulatory gestures overlap
+ * on both sides of it.  Build a shared midpoint from the two endpoint states,
+ * then approach that midpoint over a phone-pair-specific window.  Both phones
+ * therefore meet at exactly the same source/filter state without adding a
+ * second synthesizer path or any work to the per-sample language frontend. */
+static void params_for_event(const nanotts_impl_t *impl,size_t index,
+                             float progress,float elapsed_ms,float total_ms,
+                             const nanotts_options_t *o,nanotts_params_t *p)
+{
+    nanotts_params_t current,other,endpoint_a,endpoint_b,midpoint;
+    nanotts_phone_t cur=(nanotts_phone_t)impl->events[index].phone;
+    params_for_event_raw(impl,index,progress,elapsed_ms,total_ms,&current);
+    *p=current;
+
+    if(index>0u){
+        nanotts_phone_t prev=(nanotts_phone_t)impl->events[index-1u].phone;
+        float window=boundary_transition_ms(prev,cur);
+        if(window>0.0f&&elapsed_ms<window){
+            float prev_total=event_duration_ms(impl,index-1u,o);
+            float cur_total=total_ms;
+            float t=nanotts_smoothstep(elapsed_ms/window);
+            params_for_event_raw(impl,index-1u,1.0f,prev_total,prev_total,&endpoint_a);
+            params_for_event_raw(impl,index,0.0f,0.0f,cur_total,&endpoint_b);
+            params_mix(&midpoint,&endpoint_a,&endpoint_b,0.5f);
+            params_mix(&other,&midpoint,&current,t);
+            *p=other;
+        }
+    }
+
+    if(index+1u<impl->event_count){
+        nanotts_phone_t next=(nanotts_phone_t)impl->events[index+1u].phone;
+        float window=boundary_transition_ms(cur,next);
+        float remaining=total_ms-elapsed_ms;
+        if(window>0.0f&&remaining<window){
+            float next_total=event_duration_ms(impl,index+1u,o);
+            float t=nanotts_smoothstep((window-remaining)/window);
+            params_for_event_raw(impl,index,1.0f,total_ms,total_ms,&endpoint_a);
+            params_for_event_raw(impl,index+1u,0.0f,0.0f,next_total,&endpoint_b);
+            params_mix(&midpoint,&endpoint_a,&endpoint_b,0.5f);
+            params_mix(&other,p,&midpoint,t);
+            *p=other;
+        }
+    }
+
     p->voiced=nanotts_clampf(p->voiced,0.0f,1.0f);
     p->noise=nanotts_clampf(p->noise,0.0f,1.25f);
     p->aspiration=nanotts_clampf(p->aspiration,0.0f,1.25f);
@@ -615,23 +821,28 @@ static float synth_sample(nanotts_impl_t *impl,const nanotts_params_t *p,
 {
     static const float nw[3]={0.38f,1.0f,0.48f};
     float src=glottal_source(impl,f0,p),noise=white_noise(impl);
-    float high=noise-0.67f*impl->previous_noise,cascade=src,nout=0.0f;
+    float voice_activity=nanotts_clampf((p->voiced-0.018f)*4.8f,0.0f,1.0f);
+    float noise_sum=p->noise+p->aspiration;
+    float noise_activity=nanotts_clampf((noise_sum-0.028f)*3.4f,0.0f,1.0f);
+    float voiced_drive=src*voice_activity;
+    float high=(noise-0.67f*impl->previous_noise)*noise_activity;
+    float cascade=voiced_drive,nout=0.0f;
     float detail[4],oral,nasal_low,nasal_high,notched,voiced,mix,dc,a;
-    float aspiration; unsigned i;
+    float aspiration,aspiration_drive=noise*noise_activity; unsigned i;
     impl->previous_noise=noise;
     for(i=0u;i<4u;++i)cascade=biquad_process(&impl->voiced_filters[i],cascade);
-    for(i=0u;i<4u;++i)detail[i]=biquad_process(&impl->voiced_detail_filters[i],src);
+    for(i=0u;i<4u;++i)detail[i]=biquad_process(&impl->voiced_detail_filters[i],voiced_drive);
     for(i=0u;i<3u;++i)nout+=nw[i]*biquad_process(&impl->noise_filters[i],high);
     oral=0.60f*cascade+p->detail_gain[0]*detail[0]+
          p->detail_gain[1]*detail[1]+p->detail_gain[2]*detail[2]+
          p->detail_gain[3]*detail[3];
-    nasal_low=biquad_process(&impl->nasal_filters[0],src);
-    nasal_high=biquad_process(&impl->nasal_filters[1],src);
+    nasal_low=biquad_process(&impl->nasal_filters[0],voiced_drive);
+    nasal_high=biquad_process(&impl->nasal_filters[1],voiced_drive);
     notched=biquad_process(&impl->nasal_zero_filters[0],oral);
     notched=biquad_process(&impl->nasal_zero_filters[1],notched);
     voiced=(1.0f-p->nasal)*oral+p->nasal*(0.43f*notched+7.8f*nasal_low+3.1f*nasal_high);
-    impl->aspiration_lowpass+=(noise-impl->aspiration_lowpass)*0.115f;
-    aspiration=0.68f*impl->aspiration_lowpass+0.32f*noise;
+    impl->aspiration_lowpass+=(aspiration_drive-impl->aspiration_lowpass)*0.115f;
+    aspiration=0.68f*impl->aspiration_lowpass+0.32f*aspiration_drive;
     mix=p->voiced*voiced+p->noise*0.29f*nout+
         p->aspiration*(0.105f*aspiration+0.115f*nout);
     mix*=p->amplitude;
@@ -735,31 +946,37 @@ static size_t phrase_samples(const nanotts_impl_t *impl,size_t start,size_t end,
     }return total?total:1u;
 }
 
-static float contour(nanotts_final_tone_t tone,float x)
+static float contour(nanotts_final_tone_t tone,float x,uint8_t expression_q8)
 {
     float semitones;
+    float expression=expression_q8?nanotts_clampf((float)expression_q8/128.0f,
+                                                  0.45f,1.65f):1.0f;
     x=nanotts_clampf(x,0.0f,1.0f);
-    semitones=-0.70f*x; /* gentle declination across an intonational phrase */
-    if(tone==NANOTTS_FINAL_RISE&&x>0.68f)semitones+=4.7f*nanotts_smoothstep((x-0.68f)/0.32f);
-    else if(tone==NANOTTS_FINAL_FALL&&x>0.72f)semitones-=2.5f*nanotts_smoothstep((x-0.72f)/0.28f);
-    else if(tone==NANOTTS_FINAL_CONTINUE&&x>0.70f)semitones+=2.0f*nanotts_smoothstep((x-0.70f)/0.30f);
+    semitones=-0.70f*x*expression;
+    if(tone==NANOTTS_FINAL_RISE&&x>0.68f)
+        semitones+=4.7f*expression*nanotts_smoothstep((x-0.68f)/0.32f);
+    else if(tone==NANOTTS_FINAL_FALL&&x>0.72f)
+        semitones-=2.5f*expression*nanotts_smoothstep((x-0.72f)/0.28f);
+    else if(tone==NANOTTS_FINAL_CONTINUE&&x>0.70f)
+        semitones+=2.0f*expression*nanotts_smoothstep((x-0.70f)/0.30f);
     return exp2_local(semitones/12.0f);
 }
 
 static float event_pitch(const nanotts_impl_t *impl,size_t index,float x)
 {
-    float a=(float)impl->events[index].pitch_semitones_q4/16.0f,b=a;
-    if(index+1u<impl->event_count&&!nanotts_phone_is_pause((nanotts_phone_t)impl->events[index+1u].phone))
-        b=(float)impl->events[index+1u].pitch_semitones_q4/16.0f;
+    const nanotts_event_t *event=&impl->events[index];
+    float a=(float)event->pitch_semitones_q4/16.0f;
+    float b=(float)event->pitch_end_semitones_q4/16.0f;
     return exp2_local(nanotts_lerp(a,b,nanotts_smoothstep(x))/12.0f);
 }
 
 static float render_f0(const nanotts_impl_t *impl,size_t event_index,
                        float event_x,float phrase_x,float global_pitch,
-                       nanotts_final_tone_t tone,const nanotts_phone_def_t *d)
+                       nanotts_final_tone_t tone,const nanotts_phone_def_t *d,
+                       uint8_t expression_q8)
 {
     float f0=KO_BASE_PITCH_HZ*global_pitch*event_pitch(impl,event_index,event_x)*
-             contour(tone,phrase_x);
+             contour(tone,phrase_x,expression_q8);
     int8_t cue=d->onset_pitch_q4; float envelope=1.0f-nanotts_smoothstep(event_x/0.44f);
     nanotts_phone_kind_t kind=(nanotts_phone_kind_t)d->kind;
     if(kind==NANOTTS_KIND_VOWEL||kind==NANOTTS_KIND_GLIDE){
@@ -794,11 +1011,16 @@ nanotts_result_t nanotts_synth_render(nanotts_impl_t *impl,
     bool params_ready=false;
     unsigned coefficient_phase=0u;
     float coefficient_amount;
+    float previous_output=0.0f,previous_delta=0.0f;
+    float boundary_correction=0.0f;
+    size_t correction_left=0u,correction_total=0u;
+    bool have_previous_output=false;
     nanotts_result_t r;
     if(!impl||!o||!write)return NANOTTS_ERR_ARGUMENT;
     if((o->rate_q8&&(o->rate_q8<96u||o->rate_q8>640u))||
        o->pitch_cents < -1200||o->pitch_cents>1200||
-       o->final_tone>(uint8_t)NANOTTS_FINAL_AUTO)return NANOTTS_ERR_ARGUMENT;
+       o->final_tone>(uint8_t)NANOTTS_FINAL_AUTO||
+       o->style>=(uint8_t)NANOTTS_KO_STYLE_COUNT)return NANOTTS_ERR_ARGUMENT;
     clear_state(impl);
     memset(&current_params,0,sizeof(current_params));
     memset(&target_params,0,sizeof(target_params));
@@ -825,6 +1047,15 @@ nanotts_result_t nanotts_synth_render(nanotts_impl_t *impl,
         size_t frame=(size_t)impl->sample_rate*NANOTTS_CONTROL_MS/1000u;
         size_t pos=0u;float total_ms=1000.0f*(float)total/(float)impl->sample_rate;
         bool is_pause=d->kind==NANOTTS_KIND_PAUSE;
+        bool bridge_pending=false;
+        size_t bridge_length=0u;
+        float bridge_slope=0.0120f;
+        if(ei>0u&&!is_pause){
+            nanotts_phone_t prev=(nanotts_phone_t)impl->events[ei-1u].phone;
+            bridge_length=boundary_bridge_samples(impl,prev,ph);
+            bridge_slope=boundary_slope_limit(prev,ph);
+            bridge_pending=bridge_length>0u;
+        }
         if(!frame)frame=1u;
         if(ei>pe){ps=ei;pe=phrase_end(impl,ei);ptotal=phrase_samples(impl,ps,pe,o);
             pelapsed=0u;ptone=phrase_tone(impl,pe,o->final_tone);}
@@ -836,7 +1067,7 @@ nanotts_result_t nanotts_synth_render(nanotts_impl_t *impl,
             float pp1=ei<pe?((float)pelapsed+(float)(pos+count))/(float)ptotal:1.0f;
             float f0a=0.0f,f0b=0.0f,f0step=0.0f;
             if(!is_pause){
-                params_for_event(impl,ei,x1,x1*total_ms,total_ms,&target_params);
+                params_for_event(impl,ei,x1,x1*total_ms,total_ms,o,&target_params);
                 design_filters(&filter_targets,&target_params,(float)impl->sample_rate);
                 if(!params_ready){
                     current_params=target_params;
@@ -846,13 +1077,17 @@ nanotts_result_t nanotts_synth_render(nanotts_impl_t *impl,
                 }
                 params_make_step(&param_step,&current_params,&target_params,
                                  1.0f/(float)count);
-                f0a=render_f0(impl,ei,x0,pp0,global_pitch,ptone,d);
-                f0b=render_f0(impl,ei,x1,pp1,global_pitch,ptone,d);
+                f0a=render_f0(impl,ei,x0,pp0,global_pitch,ptone,d,o->expression_q8);
+                f0b=render_f0(impl,ei,x1,pp1,global_pitch,ptone,d,o->expression_q8);
                 f0step=(f0b-f0a)/(float)count;
             }
             for(k=0u;k<count;++k){float out;int32_t pcm;
                 if(is_pause){
                     decay_state(impl);out=0.0f;
+                    previous_delta=-previous_output;
+                    previous_output=0.0f;
+                    have_previous_output=true;
+                    correction_left=correction_total=0u;
                 }else{
                     float f0=f0a+f0step*((float)k+0.5f);
                     params_advance(&current_params,&param_step);
@@ -861,6 +1096,22 @@ nanotts_result_t nanotts_synth_render(nanotts_impl_t *impl,
                     ++coefficient_phase;
                     if(coefficient_phase>=NANOTTS_COEFF_STRIDE)coefficient_phase=0u;
                     out=synth_sample(impl,&current_params,f0,volume);
+                    if(bridge_pending&&have_previous_output){
+                        float predicted=previous_output+
+                            nanotts_clampf(previous_delta,-bridge_slope,bridge_slope);
+                        boundary_correction=nanotts_clampf(predicted-out,-0.075f,0.075f);
+                        correction_left=correction_total=bridge_length;
+                        bridge_pending=false;
+                    }
+                    if(correction_left&&correction_total){
+                        float t=(float)correction_left/(float)correction_total;
+                        float weight=nanotts_smoothstep(t);
+                        out+=boundary_correction*weight;
+                        --correction_left;
+                    }
+                    previous_delta=out-previous_output;
+                    previous_output=out;
+                    have_previous_output=true;
                 }
                 pcm=(int32_t)(out*32767.0f);if(pcm>32767)pcm=32767;if(pcm<-32768)pcm=-32768;
                 if(emit_sample(impl,(int16_t)pcm,write,user))return NANOTTS_ERR_CALLBACK_ABORTED;

@@ -1,144 +1,113 @@
-# MCU porting
+# MCU porting guide
 
-## Minimum integration
+## Core requirements
 
-The core needs:
-
-- a C99 compiler;
-- 32-bit integer arithmetic;
-- `float` support, in hardware or software;
-- a callback accepting signed 16-bit PCM;
-- static storage for `nanotts_t` and the peripheral queue.
-
-It does not need an OS, heap, filesystem, locale, Unicode library, or audio
-codec.
-
-## Quality and compact profiles
-
-The default full-quality profile uses:
+NanoTTS-KO requires:
 
 ```text
-512 phone events
-160 Hangul syllables
-4096-byte public context
-128-sample callback blocks
-1 ms acoustic target planning
-2-sample coefficient smoothing stride
+C99 compiler
+32-bit integer arithmetic
+single-precision float support or software float
+caller-provided static context
+an int16 PCM sink
 ```
 
-Build it with:
+It does not require heap allocation, files, POSIX, threads, SDL, or an audio
+framework.
+
+## Recommended profiles
+
+### Cortex-M4F/M7, ESP32, RP2350-class FPU targets
 
 ```bash
-./setup.sh
+./setup.sh --outputs pwm
 ```
 
-The recommended small/no-FPU starting point is:
+Use the default 1 ms control period and two-sample coefficient stride when the
+CPU budget permits.
+
+### Smaller/no-FPU targets
 
 ```bash
 ./setup.sh --compact --no-libm --outputs pwm
 ```
 
-It uses:
+The compact profile uses smaller working arrays, 2 ms controls, and coefficient
+updates every four samples.
 
-```text
-256 phone events
-96 Hangul syllables
-3072-byte public context
-64-sample callback blocks
-2 ms acoustic target planning
-4-sample coefficient smoothing stride
-compact internal math
-PWM adapter only
-```
+### Fixed application vocabulary
 
-The compact script chooses 2 ms and a four-sample coefficient stride unless
-those values are explicitly supplied. Benchmark both dimensions on the target
-before trading away transition smoothness:
+Run normalization and morphology on a host, cache the resulting eight-byte
+events, and use `nanotts_set_events()` on the MCU. This removes linguistic work
+from latency-sensitive paths while preserving the high-quality renderer plan.
+The event format should be wrapped in an application version header because it
+is not a stable cross-major-version wire format.
 
-```bash
-./setup.sh --compact --control-ms 1 --coeff-stride 1 --no-libm --outputs pwm
-./setup.sh --compact --control-ms 2 --coeff-stride 2 --no-libm --outputs pwm
-./setup.sh --compact --control-ms 2 --coeff-stride 4 --no-libm --outputs pwm
-```
+## Audio callback
 
-Reduce event and syllable capacities only after measuring the longest actual
-prompt set. A compile-time context-size assertion rejects unsafe settings.
-
-## Sample rate
-
-- 16 kHz is the normal MCU baseline.
-- 24 kHz retains more frication/aspiration bandwidth when CPU and output
-  hardware permit it.
-- 8 kHz is supported but substantially limits high-frequency consonant detail.
-
-The acoustic table is sample-rate independent; filters are recalculated for the
-selected rate.
-
-## I2S or DAC
-
-Connect the native callback directly to a DMA queue:
+For I2S or DAC:
 
 ```c
-static int audio_write(void *user, const int16_t *samples, size_t count)
+static int write_pcm(void *user, const int16_t *samples, size_t count)
 {
     return queue_i2s_dma(user, samples, count) ? 0 : 1;
 }
 ```
 
-The callback must consume or copy the block before returning; NanoTTS reuses the
-buffer.
+The callback must consume or copy the samples before returning.
 
 ## PWM
 
-Use `nanotts_pwm_output_t` to map each PCM sample into one timer compare value.
-The timer generates a much faster carrier while DMA or an ISR updates its
-compare register at the speech sample rate.
-
-A practical starting point is:
+NanoTTS's PWM adapter outputs one timer compare value per audio sample. It is
+not a sampled carrier waveform. Configure:
 
 ```text
-speech update rate: 16 kHz
-PWM TOP:             1023 or greater
-PWM carrier:         well above speech/audio bandwidth
-output:              reconstruction low-pass -> amplifier -> speaker
+free-running carrier well above the audio sample rate
+DMA or a deterministic ISR that updates compare at 16 or 24 kHz
+mid-scale duty while idle
+continuous timer operation across blocks
+analog reconstruction filtering
 ```
 
-The `.pwm16le` host format is a stream of compare values, not a sampled carrier
-waveform. Keep the PWM carrier running at midpoint duty during idle; see
-`DECLICKING.md` for click-free DMA and amplifier behavior.
+Do not stop the timer, force the pin low, or reset duty between blocks; those
+operations create physical pops even when the synthesized PCM is continuous.
 
-## CPU considerations
+## Memory placement
 
-The quality renderer uses:
+Put immutable voice, lexicon, and normalization tables in flash/ROM. Keep the
+`nanotts_t` context and output adapter scratch buffers in RAM. The context is
+large because it contains all tokens, morphemes, syllables, events, DSP state,
+and the PCM callback block.
 
-```text
-4 cascade vocal-tract resonators
-4 parallel voiced-detail resonators
-3 frication/noise filters
-2 nasal poles
-2 nasal antiresonances
-1 aspiration path
+## Stack
+
+The core uses bounded local variables and does not allocate large variable-length
+arrays. Application callbacks should also avoid deep stacks and blocking I/O.
+
+## Compile-time module removal
+
+```bash
+./setup.sh --no-normalization
+./setup.sh --no-morphology
+./setup.sh --no-lexicon
+./setup.sh --outputs none
 ```
 
-Coefficient targets are calculated once per 1–4 ms control block. Stable
-intermediate coefficients are then approached every 1–4 audio samples. The
-inner sample loop contains only filter/source arithmetic and does not call
-trigonometry or divide. The no-`libm` build replaces coefficient and pitch math with bounded
-local approximations.
+These remove code and tables at compile time; there is no runtime modularity
+penalty.
 
-Use size optimization, sectioning, and linker garbage collection:
+## Throughput
 
-```text
--Os -ffunction-sections -fdata-sections
--Wl,--gc-sections
-```
+Benchmark the exact target, sample rate, compiler, flash wait-state setup, and
+output method. Lower `NANOTTS_CONTROL_MS` and `NANOTTS_COEFF_STRIDE` values make
+transitions smoother but increase coefficient design/update work.
 
-Measure both real-time headroom and flash with the target linker map; host object
-sizes are comparative only.
+## Critical prompts
 
-## Concurrency
+For alarms, medical prompts, industrial controls, or public announcements:
 
-A context is single-renderer and not internally synchronized. Use one context
-per simultaneous voice or serialize access. It is safe for DMA to consume a
-previously submitted block while NanoTTS computes the next block, provided the
-callback copies or transfers ownership correctly.
+1. Use `clear-device` style.
+2. Override product and proper-name pronunciations explicitly.
+3. Review normalized numbers and units.
+4. Validate through the real speaker/amplifier/PWM filter path.
+5. Conduct native-Korean blind transcription in expected background noise.

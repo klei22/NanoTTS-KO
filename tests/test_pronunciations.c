@@ -11,6 +11,9 @@
 #ifndef NANOTTS_ENABLE_BUILTIN_LEXICON
 #define NANOTTS_ENABLE_BUILTIN_LEXICON 1
 #endif
+#ifndef NANOTTS_ENABLE_MORPHOLOGY
+#define NANOTTS_ENABLE_MORPHOLOGY 1
+#endif
 
 static size_t content_phones(const nanotts_t *tts, nanotts_phone_t *out, size_t cap)
 {
@@ -57,7 +60,11 @@ int main(void)
         kind = tab + 1;
 #if !NANOTTS_ENABLE_BUILTIN_LEXICON
         if (strcmp(kind, "lex") == 0) { ++skipped; continue; }
-#else
+#endif
+#if !NANOTTS_ENABLE_MORPHOLOGY
+        if (strcmp(kind, "morph") == 0) { ++skipped; continue; }
+#endif
+#if NANOTTS_ENABLE_BUILTIN_LEXICON && NANOTTS_ENABLE_MORPHOLOGY
         (void)kind;
 #endif
         assert(nanotts_parse_text(&written_tts, written, NANOTTS_NPOS,
